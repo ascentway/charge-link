@@ -1,0 +1,1 @@
+Electric vehicle drivers waste time and battery charge navigating to public charging stations listed on apps only to discover they are non-functional, under maintenance, or occupied, and they need real-time verification systems that confirm charger availability, functionality status, and queuing times before departure.
