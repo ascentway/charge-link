@@ -109,3 +109,10 @@ INDIA_CITIES: list[dict] = [
     {"name": "Vapi",         "lat": 20.3717,  "lng": 72.9050},  # Mumbai-Surat
     {"name": "Anand",        "lat": 22.5645,  "lng": 72.9289},  # Ahmedabad-Surat
 ]
+
+# ── Google Places API (New) ────────────────────────────────────────
+# Free key from: console.cloud.google.com
+# Enable "Places API (New)" — $200 free credit/month, resets monthly
+# Full India scan costs ~$6-10 from the free credit
+# Leave blank to skip Google Places fetching
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
