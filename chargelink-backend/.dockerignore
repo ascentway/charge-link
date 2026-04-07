@@ -1,0 +1,20 @@
+# Build output — never needed in Docker context
+target/
+
+# IDE and local tool files
+.idea/
+.vscode/
+*.iml
+*.iws
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Secrets — loaded at runtime from docker-compose env_file instead
+.env
+
+# Dev tools
+*.md
+HELP.md

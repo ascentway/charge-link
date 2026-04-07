@@ -1,0 +1,44 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# ChargeLink – Docker Compose
+#
+# Database & Auth are hosted on Supabase cloud — no local Postgres needed.
+# Secrets are loaded from chargelink-backend/.env
+#
+# Usage:
+#   docker compose up --build          # build + start
+#   docker compose up -d               # start in background (detached)
+#   docker compose down                # stop and remove containers
+#   docker compose logs -f backend     # follow backend logs
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  backend:
+    container_name: chargelink-backend
+    build:
+      context: ./chargelink-backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./chargelink-backend/.env
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://aws-1-ap-southeast-2.pooler.supabase.com:5432/postgres?user=postgres.uxnfoivctwgwgzjslisl&password=${DB_PASSWORD}"
+      SPRING_DATASOURCE_USERNAME: "postgres.uxnfoivctwgwgzjslisl"
+      SPRING_DATASOURCE_PASSWORD: "${DB_PASSWORD}"
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: "https://${SUPABASE_PROJECT_ID}.supabase.co/auth/v1/.well-known/jwks.json"
+      SUPABASE_URL: "https://${SUPABASE_PROJECT_ID}.supabase.co"
+      SUPABASE_ANON_KEY: "${SUPABASE_ANON_KEY}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 256m
