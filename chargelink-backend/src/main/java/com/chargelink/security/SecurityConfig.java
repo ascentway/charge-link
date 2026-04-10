@@ -3,6 +3,7 @@ package com.chargelink.security;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -28,7 +29,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints
                         .requestMatchers("/api/v1/auth/public/**", "/api/v1/auth/login", "/api/v1/auth/signup", "/api/v1/auth/logout").permitAll()
-                        .requestMatchers("/api/v1/stations/nearby").permitAll()
+                        .requestMatchers("/api/v1/stations/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/chargers/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-resources/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         // Ensure everything else requires authentication

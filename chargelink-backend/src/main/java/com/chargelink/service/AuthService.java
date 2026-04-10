@@ -87,13 +87,15 @@ public class AuthService {
     public void deleteAccount(java.util.UUID userId) {
         log.info("Deleting user account: {}", userId);
 
-        // 1. Delete from local DB (triggers CASCADE to vehicles, bookings, etc.)
-        userRepository.findById(userId).ifPresentOrElse(
-                user -> userRepository.delete(user),
-                () -> { throw new AuthException("User not found", HttpStatus.NOT_FOUND); }
-        );
+        // 1. Verify existence in local DB
+        if (!userRepository.existsById(userId)) {
+            throw new AuthException("User not found", HttpStatus.NOT_FOUND);
+        }
 
         // 2. Delete from Supabase Auth (Remote)
+        // Note: We DO NOT call userRepository.delete() because Supabase Auth natively
+        // has an 'ON DELETE CASCADE' trigger that automatically removes the user from 'public.users'.
+        // Calling it manually causes an ObjectOptimisticLockingFailureException when Hibernate flushes.
         supabaseAuthClient.deleteUser(userId);
     }
 
