@@ -6,6 +6,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -71,6 +73,50 @@ public class GlobalExceptionHandler {
         }
 
         return "The operation could not be completed due to a data conflict.";
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ProblemDetail handleMissingParams(MissingServletRequestParameterException ex) {
+        log.warn("Missing request parameter: {}", ex.getParameterName());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Required parameter is missing: " + ex.getParameterName()
+        );
+        problemDetail.setType(URI.create("https://chargelink.com/errors/bad-request"));
+        problemDetail.setTitle("Missing Parameter");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        log.warn("Argument type mismatch for property: {}", ex.getName());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Invalid value for parameter: " + ex.getName()
+        );
+        problemDetail.setType(URI.create("https://chargelink.com/errors/bad-request"));
+        problemDetail.setTitle("Invalid Parameter Type");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(SecurityException.class)
+    public ProblemDetail handleSecurityException(SecurityException ex) {
+        log.warn("Security violation: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN, ex.getMessage()
+        );
+        problemDetail.setType(URI.create("https://chargelink.com/errors/forbidden"));
+        problemDetail.setTitle("Access Denied");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex) {
+        log.warn("Resource not found: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND, ex.getMessage()
+        );
+        problemDetail.setType(URI.create("https://chargelink.com/errors/not-found"));
+        problemDetail.setTitle("Resource Not Found");
+        return problemDetail;
     }
 
     @ExceptionHandler(Exception.class)
