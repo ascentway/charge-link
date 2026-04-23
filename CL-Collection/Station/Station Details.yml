@@ -1,0 +1,15 @@
+info:
+  name: Station Details
+  type: http
+  seq: 2
+
+http:
+  method: GET
+  url: http://localhost:8080/api/v1/stations/0019a885-9cc4-4e48-a186-89069fdd86fa
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -1,0 +1,25 @@
+info:
+  name: Nearby Stations
+  type: http
+  seq: 2
+
+http:
+  method: GET
+  url: http://localhost:8080/api/v1/stations/nearby?lat=19.0760&lng=72.8777&radiusKm=10
+  params:
+    - name: lat
+      value: "19.0760"
+      type: query
+    - name: lng
+      value: "72.8777"
+      type: query
+    - name: radiusKm
+      value: "10"
+      type: query
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

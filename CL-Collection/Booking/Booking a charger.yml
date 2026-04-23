@@ -1,0 +1,26 @@
+info:
+  name: Booking a charger
+  type: http
+  seq: 18
+
+http:
+  method: POST
+  url: http://localhost:8080/api/v1/bookings
+  body:
+    type: json
+    data: |
+      {
+        "chargerId": "0092610e-e4c7-46bb-9a64-9ee1c9e12eb7",
+        "vehicleId": "1cea970d-316f-4d99-b150-f589545f5ef8", 
+        "slotStart": "2026-04-08T15:00:00Z",
+        "slotEnd": "2026-04-08T16:30:00Z",
+        "estimatedKwh": 15.5,
+        "notes": "Need full charge for highway trip"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

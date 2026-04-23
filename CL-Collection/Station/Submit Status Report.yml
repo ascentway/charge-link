@@ -1,0 +1,23 @@
+info:
+  name: Submit Status Report
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: http://localhost:8080/api/v1/chargers/0042b5da-6e49-4adc-b409-1fe9052c9dd3/report
+  body:
+    type: json
+    data: |
+      {
+        "reportedStatus": "faulted",
+        "note": "Screen is flickering, but charging started after 2 tries.",
+        "photoUrl": "https://supabase-storage.com/reports/cp01_broken.jpg"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

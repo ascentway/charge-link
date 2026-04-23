@@ -1,0 +1,23 @@
+info:
+  name: Join Waitlist For A Charger
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: http://localhost:8080/api/v1/waitlist/join
+  body:
+    type: json
+    data: |
+      {
+        "chargerId": "01d610cc-3242-46ea-a915-242b44e16e7b",
+        "wantedFrom": "2024-04-08T15:00:00Z",
+        "wantedTo": "2024-04-08T15:30:00Z"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

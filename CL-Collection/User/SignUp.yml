@@ -1,0 +1,24 @@
+info:
+  name: SignUp
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: http://localhost:8080/api/v1/auth/signup
+  body:
+    type: json
+    data: |-
+      {
+        "email": "prakash@gmail.com",
+        "password": "Abcd@4321",
+        "phone":"1234567899",
+        "fullName": "Prakash Bhatti"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

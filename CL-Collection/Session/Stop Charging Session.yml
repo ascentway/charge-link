@@ -1,0 +1,23 @@
+info:
+  name: Stop Charging Session
+  type: http
+  seq: 2
+
+http:
+  method: PATCH
+  url: http://localhost:8080/api/v1/sessions/8e045f47-01db-4877-b587-e93cc237edbc/stop
+  body:
+    type: json
+    data: |
+      {
+        "energyDeliveredKwh": 12.45,
+        "durationMinutes": 45,
+        "amountCharged": 250.00
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
