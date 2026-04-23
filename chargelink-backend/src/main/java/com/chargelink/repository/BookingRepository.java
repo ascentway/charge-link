@@ -29,4 +29,15 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("chargerId") UUID chargerId,
             @Param("after") ZonedDateTime after,
             Pageable pageable);
+
+    @Query("SELECT b FROM Booking b WHERE b.status IN ('pending', 'confirmed') " +
+            "AND b.slotEnd < :now")
+    List<Booking> findPastDueBookings(@Param("now") ZonedDateTime now);
+
+    @Query("SELECT COUNT(b) > 0 FROM Booking b WHERE b.user.id = :userId " +
+            "AND b.status IN ('pending', 'confirmed', 'active') " +
+            "AND b.slotStart < :endTime AND b.slotEnd > :startTime")
+    boolean hasOverlappingBookingForUser(@Param("userId") UUID userId,
+                                         @Param("startTime") ZonedDateTime startTime,
+                                         @Param("endTime") ZonedDateTime endTime);
 }

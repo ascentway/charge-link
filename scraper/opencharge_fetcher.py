@@ -230,4 +230,4 @@ def fetch_all_india_stations(dry_run: bool = False) -> list[dict]:
     log.info("  Total chargers    : %d", total_chargers)
     log.info("━" * 50)
 
-    return all_stations
+    return all_stations 

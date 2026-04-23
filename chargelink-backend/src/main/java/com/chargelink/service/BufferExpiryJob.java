@@ -17,6 +17,7 @@ import java.util.List;
 public class BufferExpiryJob {
 
     private final BookingRepository bookingRepository;
+    private final NotificationService notificationService;
 
     @Scheduled(fixedDelay = 60_000) // runs every 60 seconds
     @Transactional
@@ -29,8 +30,24 @@ public class BufferExpiryJob {
             b.setStatus("no_show");
             b.setCancelledAt(now);
             b.setCancelReason("Buffer expired — user did not arrive");
-            log.info("Booking {} marked no_show after buffer expiry", b.getId());
+            log.info("Booking {} marked no_show after buffer expiry", b.getId());   
         }
         bookingRepository.saveAll(expired);
+    }
+
+    @Scheduled(fixedDelay = 300_000) // sweeps every 5 minutes
+    @Transactional
+    public void expirePastDueBookings() {
+        ZonedDateTime now = ZonedDateTime.now();
+        List<Booking> pastDue = bookingRepository.findPastDueBookings(now);
+
+        for (Booking b : pastDue) {
+            b.setStatus("expired");
+            b.setCancelledAt(now);
+            b.setCancelReason("Time block concluded without session activation.");
+            log.info("Booking {} marked expired because slotEnd passed without use", b.getId());
+            notificationService.sendBookingNoShowNotification(b.getUser().getId(), b.getId());
+        }
+        bookingRepository.saveAll(pastDue);
     }
 }

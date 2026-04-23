@@ -14,6 +14,7 @@ public enum ConnectorType {
     BHARAT_AC("Bharat AC"),
     BHARAT_DC("Bharat DC");
 
+
     @JsonValue
     private final String value;
 

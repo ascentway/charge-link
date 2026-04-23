@@ -21,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -102,7 +101,7 @@ public class SessionService {
         return sessionRepository.findByUserIdOrderByStartedAtDesc(userId)
                 .stream()
                 .map(businessMapper::toSessionDto)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     private void notifyNextWaitingUser(UUID chargerId, ZonedDateTime availableUntil) {

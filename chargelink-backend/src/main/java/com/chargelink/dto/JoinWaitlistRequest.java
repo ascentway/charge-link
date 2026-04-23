@@ -11,6 +11,7 @@ public class JoinWaitlistRequest {
     @NotNull(message = "Charger ID is required")
     private UUID chargerId;
 
+    @NotNull(message = "Vehicle ID is required")
     private UUID vehicleId;
 
     @NotNull(message = "Wanted from time is required")
