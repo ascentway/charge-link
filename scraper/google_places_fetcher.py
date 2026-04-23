@@ -13,6 +13,11 @@ Get your API key:
   2. Create project → Enable "Places API (New)"
   3. APIs & Services → Credentials → Create API Key
   4. Restrict key to Places API only
+
+  ERROR 403 FIX:
+  If you get Permission Denied (403), ensure:
+  - "Places API (New)" is ENABLED in the API Library for your project.
+  - The API Key is NOT restricted in a way that blocks 'places.googleapis.com'.
 """
 
 import time
@@ -40,6 +45,7 @@ FIELD_MASK = ",".join([
     "places.id",
     "places.displayName",
     "places.formattedAddress",
+    "places.addressComponents",
     "places.location",
     "places.evChargeOptions",
     "places.regularOpeningHours",
@@ -61,7 +67,7 @@ GOOGLE_CONNECTOR_MAP: dict[str, str] = {
     "EV_CONNECTOR_TYPE_TESLA_SUPERCHARGER": "Tesla",
     "EV_CONNECTOR_TYPE_GB_T_AC":        "GB/T AC",
     "EV_CONNECTOR_TYPE_GB_T_DC":        "GB/T DC",
-    "EV_CONNECTOR_TYPE_UNSPECIFIED":    "Type2",  # safe default
+    "EV_CONNECTOR_TYPE_UNSPECIFIED":    "Type2",
     "EV_CONNECTOR_TYPE_OTHER":          "Type2",
 }
 
@@ -83,13 +89,22 @@ def _fetch_city(lat: float, lng: float) -> list[dict]:
         "locationRestriction": {
             "circle": {
                 "center": {"latitude": lat, "longitude": lng},
-                "radius": float(SEARCH_RADIUS_KM * 1000),  # metres
+                "radius": float(SEARCH_RADIUS_KM * 1000),
             }
         },
-        "maxResultCount": 20,  # max allowed by Google per call
+        "maxResultCount": 20,
     }
     resp = requests.post(PLACES_URL, json=body, headers=headers, timeout=30)
-    resp.raise_for_status()
+
+    if resp.status_code != 200:
+        if resp.status_code == 403:
+            log.error("Google Places API error: 403 PERMISSION_DENIED. "
+                      "Fix: Enable 'Places API (New)' in Google Cloud Console.")
+        else:
+            log.error("Google Places API error: %d - %s", resp.status_code, resp.text)
+        resp.raise_for_status()
+
+    # The rest of the parsing Logic
     data = resp.json()
     return data.get("places", [])
 
@@ -123,16 +138,16 @@ def _parse_place(place: dict) -> Optional[dict]:
         name    = (place.get("displayName") or {}).get("text") or "EV Charging Station"
         address = place.get("formattedAddress") or ""
 
-        # Parse address components (city, state) from formatted address
-        # Format is usually: "Shop Name, Street, Area, City, State PIN, India"
-        parts = [p.strip() for p in address.split(",")]
-        # Remove "India" at end, then last = PIN+state or city
-        parts = [p for p in parts if p.lower() != "india"]
-        city  = parts[-2].strip() if len(parts) >= 2 else ""
-        state = parts[-1].strip() if len(parts) >= 1 else ""
-        # Clean PIN from city/state
-        city  = " ".join(w for w in city.split() if not w.isdigit())
-        state = " ".join(w for w in state.split() if not w.isdigit())
+        # Improved parsing using addressComponents (City, State)
+        # Type "locality" = City, Type "administrative_area_level_1" = State
+        city  = ""
+        state = ""
+        for comp in place.get("addressComponents", []):
+            types = comp.get("types", [])
+            if "locality" in types:
+                city = comp.get("longText")
+            elif "administrative_area_level_1" in types:
+                state = comp.get("longText")
 
         # Parse EV charger options
         ev_opts     = place.get("evChargeOptions") or {}

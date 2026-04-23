@@ -60,10 +60,8 @@ def _fetch_station_ids_by_external(external_ids: list[str]) -> dict[str, str]:
 def upload_stations(stations: list[dict]) -> dict:
     """
     Upsert all stations and their chargers into Supabase.
-
     Args:
-        stations: List of parsed station dicts from opencharge_fetcher.
-
+        stations: List of parsed station dicts.
     Returns:
         Summary dict with station/charger counts and error count.
     """
@@ -80,94 +78,79 @@ def upload_stations(stations: list[dict]) -> dict:
 
     for batch_start in range(0, total, BATCH_SIZE):
         batch       = stations[batch_start: batch_start + BATCH_SIZE]
-        batch_num   = batch_start // BATCH_SIZE + 1
+        batch_num   = (batch_start // BATCH_SIZE) + 1
         total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
 
         # ── Build station rows ────────────────────────────────────
-        station_rows: list[dict]          = []
-        chargers_by_ext: dict[str, list]  = {}
-
+        station_rows: list[dict] = []
         for s in batch:
-            ext_id     = s["external_id"]
-            network_id = network_map.get(s["network_slug"]) if s.get("network_slug") else None
-
-            row: dict = {
-                "external_id": ext_id,
+            row = {
+                "external_id": s["external_id"],
                 "name":        s["name"],
                 "address":     s["address"],
                 "city":        s["city"],
                 "state":       s["state"],
                 "pincode":     s["pincode"],
-                "lat":         s["lat"],
-                "lng":         s["lng"],
+                "lat":          s["lat"],
+                "lng":          s["lng"],
                 "data_source": s["data_source"],
                 "is_verified": s["is_verified"],
             }
-            if network_id:
-                row["network_id"] = network_id
+            # Link to the shared network table if available
+            if s.get("network_slug") and s["network_slug"] in network_map:
+                row["network_id"] = network_map[s["network_slug"]]
 
             station_rows.append(row)
-            chargers_by_ext[ext_id] = s.get("chargers", [])
 
         # ── Upsert stations ───────────────────────────────────────
         try:
             (
                 client.table("stations")
-                .upsert(
-                    station_rows,
-                    on_conflict="external_id",  # safe: external_id is unique
-                    ignore_duplicates=False,     # update existing rows
-                )
+                .upsert(station_rows, on_conflict="external_id")
                 .execute()
             )
 
-            # Fetch back station UUIDs — don't rely on upsert returning data
+            # Fetch back station UUIDs for the chargers
             ext_ids_in_batch  = [r["external_id"] for r in station_rows]
             station_id_map    = _fetch_station_ids_by_external(ext_ids_in_batch)
             stations_ok      += len(station_id_map)
 
         except Exception as exc:
-            log.error("Batch %d/%d — station upsert failed: %s",
-                      batch_num, total_batches, exc)
+            log.error("Batch %d/%d — Station upsert failed: %s", batch_num, total_batches, exc)
             errors += len(batch)
             continue
 
-        # ── Upsert chargers for each station ──────────────────────
-        batch_chargers = 0
-
-        for ext_id, charger_list in chargers_by_ext.items():
-            station_uuid = station_id_map.get(ext_id)
-            if not station_uuid or not charger_list:
+        # ── Build and Upsert chargers ─────────────────────────────
+        charger_rows = []
+        for s in batch:
+            station_uuid = station_id_map.get(s["external_id"])
+            if not station_uuid:
                 continue
 
-            charger_rows = [
-                {**c, "station_id": station_uuid}
-                for c in charger_list
-            ]
+            for c in s.get("chargers", []):
+                charger_rows.append({
+                    "station_id":      station_uuid,
+                    "charger_code":    c["charger_code"],
+                    "connector_type":  c["connector_type"],
+                    "power_kw":        c["power_kw"],
+                    "current_type":    c["current_type"],
+                    "current_status":  c["current_status"],
+                    "status_source":   c["status_source"],
+                    "is_active":       c["is_active"]
+                })
 
+        if charger_rows:
             try:
-                (
-                    client.table("chargers")
-                    .upsert(
-                        charger_rows,
-                        on_conflict="station_id,charger_code",
-                        ignore_duplicates=False,
-                    )
-                    .execute()
-                )
-                batch_chargers += len(charger_rows)
-
+                client.table("chargers").upsert(
+                    charger_rows, on_conflict="station_id,charger_code"
+                ).execute()
+                chargers_ok += len(charger_rows)
             except Exception as exc:
-                log.warning("Charger upsert failed for station %s: %s",
-                            ext_id, exc)
+                log.warning("Batch %d/%d — Charger upsert partially failed: %s",
+                            batch_num, total_batches, exc)
 
-        chargers_ok += batch_chargers
-
-        log.info(
-            "Batch %d/%d done — stations: %d, chargers: %d",
-            batch_num, total_batches,
-            len(station_id_map), batch_chargers,
-        )
+        log.info("Batch %d/%d done — Stations: %d, Chargers: %d",
+                 batch_num, total_batches, len(station_id_map), len(charger_rows))
 
     return {
         "stations_upserted": stations_ok,

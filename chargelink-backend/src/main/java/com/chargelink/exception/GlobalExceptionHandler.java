@@ -130,6 +130,28 @@ public class GlobalExceptionHandler {
         return problemDetail;
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    public ProblemDetail handleIllegalState(IllegalStateException ex) {
+        log.warn("Illegal state: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, ex.getMessage()
+        );
+        problemDetail.setType(URI.create("https://chargelink.com/errors/bad-request"));
+        problemDetail.setTitle("Invalid Request State");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
+        log.warn("Illegal argument: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, ex.getMessage()
+        );
+        problemDetail.setType(URI.create("https://chargelink.com/errors/bad-request"));
+        problemDetail.setTitle("Bad Request");
+        return problemDetail;
+    }
+
     @ExceptionHandler(AuthException.class)
     public ProblemDetail handleAuthException(AuthException ex) {
         log.warn("Authentication failed: {}", ex.getMessage());

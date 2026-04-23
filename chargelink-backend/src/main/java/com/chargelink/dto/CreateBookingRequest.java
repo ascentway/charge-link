@@ -12,6 +12,7 @@ public class CreateBookingRequest {
     @NotNull(message = "Charger ID is required")
     private UUID chargerId;
 
+    @NotNull(message = "Vehicle ID is required")
     private UUID vehicleId;
 
     @NotNull(message = "Slot start time is required")

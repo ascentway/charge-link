@@ -5,7 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
@@ -13,17 +12,15 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class SessionDto {
+public class WaitlistDto {
     private UUID id;
-    private UUID bookingId;
     private UUID chargerId;
     private String chargerCode;
     private String stationName;
-    private BigDecimal energyDeliveredKwh;
-    private Integer durationMinutes;
-    private BigDecimal amountCharged;
-    private String currency;
-    private String paymentStatus;
-    private ZonedDateTime startedAt;
-    private ZonedDateTime endedAt;
+    private UUID vehicleId;
+    private ZonedDateTime wantedFrom;
+    private ZonedDateTime wantedTo;
+    private String status;
+    private ZonedDateTime notifiedAt;
+    private ZonedDateTime joinedAt;
 }

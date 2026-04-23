@@ -4,6 +4,7 @@ import com.chargelink.dto.BookingDto;
 import com.chargelink.dto.BusinessMapper;
 import com.chargelink.dto.CreateBookingRequest;
 import com.chargelink.dto.JoinWaitlistRequest;
+import com.chargelink.dto.WaitlistDto;
 import com.chargelink.entity.Booking;
 import com.chargelink.entity.Charger;
 import com.chargelink.entity.User;
@@ -24,6 +25,7 @@ import jakarta.persistence.OptimisticLockException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -43,20 +45,33 @@ public class BookingService {
         log.info("User {} creating booking for charger {} between {} and {}",
                 userId, request.getChargerId(), request.getSlotStart(), request.getSlotEnd());
 
+        if (!request.getSlotEnd().isAfter(request.getSlotStart())) {
+            throw new IllegalArgumentException("Slot end must be strictly after slot start.");
+        }
+        if (request.getSlotStart().isBefore(ZonedDateTime.now())) {
+            throw new IllegalArgumentException("Cannot create a booking in the past.");
+        }
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         Charger charger = chargerRepository.findById(request.getChargerId())
                 .orElseThrow(() -> new ResourceNotFoundException("Charger not found"));
 
-        Vehicle vehicle = null;
-        if (request.getVehicleId() != null) {
-            vehicle = vehicleRepository.findById(request.getVehicleId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
+        Vehicle vehicle = vehicleRepository.findById(request.getVehicleId())
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
 
-            // Security: ensure the vehicle belongs to the requesting user
-            if (!vehicle.getUser().getId().equals(userId)) {
-                throw new SecurityException("Vehicle does not belong to this user");
-            }
+        // Security: ensure the vehicle belongs to the requesting user
+        if (!vehicle.getUser().getId().equals(userId)) {
+            throw new SecurityException("Vehicle does not belong to this user");
+        }
+
+        // Connector compatibility: vehicle must support the charger's connector type
+        String chargerConnector = charger.getConnectorType();
+        String vehicleConnector = vehicle.getConnectorType().getValue();
+        if (!chargerConnector.equalsIgnoreCase(vehicleConnector)) {
+            throw new IllegalArgumentException(
+                    "Connector mismatch: your vehicle uses '" + vehicleConnector +
+                            "' but this charger is '" + chargerConnector + "'.");
         }
 
         Booking booking = Booking.builder()
@@ -67,6 +82,7 @@ public class BookingService {
                 .slotEnd(request.getSlotEnd())
                 .estimatedKwh(request.getEstimatedKwh())
                 .notes(request.getNotes())
+                .status("pending")
                 .build();
 
         booking.setBufferExpiresAt(request.getSlotStart().plusMinutes(10));
@@ -90,6 +106,10 @@ public class BookingService {
             throw new SecurityException("You do not have permission to cancel this booking");
         }
 
+        if ("cancelled".equals(booking.getStatus()) || "expired".equals(booking.getStatus()) || "completed".equals(booking.getStatus())) {
+            throw new IllegalStateException("Booking is already " + booking.getStatus() + " and cannot be cancelled");
+        }
+
         booking.setStatus("cancelled");
         booking.setCancelledAt(ZonedDateTime.now());
         // Since we didn't require a reason payload for simple delete, we leave it blank
@@ -100,16 +120,40 @@ public class BookingService {
 
     @Transactional
     public void joinWaitlist(UUID userId, JoinWaitlistRequest request) {
-        log.info("User {} joining waitlist for charger {}", userId, request.getChargerId());
+        log.info("User {} joining waitlist for charger {} from {} to {}",
+                userId, request.getChargerId(), request.getWantedFrom(), request.getWantedTo());
+
+        if (!request.getWantedTo().isAfter(request.getWantedFrom())) {
+            throw new IllegalArgumentException("Waitlist end time must be strictly after start time.");
+        }
+        if (request.getWantedFrom().isBefore(ZonedDateTime.now())) {
+            throw new IllegalArgumentException("Cannot join waitlist for a time in the past.");
+        }
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         Charger charger = chargerRepository.findById(request.getChargerId())
                 .orElseThrow(() -> new ResourceNotFoundException("Charger not found"));
 
-        Vehicle vehicle = null;
-        if (request.getVehicleId() != null) {
-            vehicle = vehicleRepository.getReferenceById(request.getVehicleId());
+        Vehicle vehicle = vehicleRepository.findById(request.getVehicleId())
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
+
+        if (!vehicle.getUser().getId().equals(userId)) {
+            throw new SecurityException("Vehicle does not belong to this user");
+        }
+
+        String chargerConnector = charger.getConnectorType();
+        String vehicleConnector = vehicle.getConnectorType().getValue();
+        if (!chargerConnector.equalsIgnoreCase(vehicleConnector)) {
+            throw new IllegalArgumentException(
+                    "Connector mismatch: your vehicle uses '" + vehicleConnector +
+                            "' but this charger is '" + chargerConnector + "'.");
+        }
+
+        // Prevent double booking / double waitlisting for the same time slot
+        if (bookingRepository.hasOverlappingBookingForUser(userId, request.getWantedFrom(), request.getWantedTo()) ||
+                waitlistRepository.hasOverlappingWaitlistForUser(userId, request.getWantedFrom(), request.getWantedTo())) {
+            throw new IllegalArgumentException("You already have a booking or waitlist entry for this time slot.");
         }
 
         Waitlist waitlist = Waitlist.builder()
@@ -118,6 +162,7 @@ public class BookingService {
                 .vehicle(vehicle)
                 .wantedFrom(request.getWantedFrom())
                 .wantedTo(request.getWantedTo())
+                .status("waiting")
                 .build();
 
         waitlistRepository.save(waitlist);
@@ -144,5 +189,43 @@ public class BookingService {
         } catch (OptimisticLockException | ObjectOptimisticLockingFailureException e) {
             throw new IllegalStateException("Slot was just claimed by another user");
         }
+    }
+
+    @Transactional(readOnly = true)
+    public List<WaitlistDto> getMyWaitlist(UUID userId) {
+        return waitlistRepository.findByUserIdOrderByJoinedAtDesc(userId).stream()
+                .map(businessMapper::toWaitlistDto)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<BookingDto> getMyBookings(UUID userId) {
+        return bookingRepository.findByUserIdOrderBySlotStartDesc(userId).stream()
+                .map(businessMapper::toBookingDto)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<WaitlistDto> getChargerWaitlist(UUID chargerId) {
+        return waitlistRepository.findByChargerIdAndStatusOrderByJoinedAtAsc(chargerId, "waiting").stream()
+                .map(businessMapper::toWaitlistDto)
+                .toList();
+    }
+
+    @Transactional
+    public void leaveWaitlist(UUID userId, UUID waitlistId) {
+        Waitlist waitlist = waitlistRepository.findById(waitlistId)
+                .orElseThrow(() -> new ResourceNotFoundException("Waitlist entry not found"));
+
+        if (!waitlist.getUser().getId().equals(userId)) {
+            throw new SecurityException("You do not have permission to leave this waitlist");
+        }
+
+        if ("cancelled".equals(waitlist.getStatus()) || "completed".equals(waitlist.getStatus())) {
+            throw new IllegalStateException("Waitlist entry is already " + waitlist.getStatus() + " and cannot be left");
+        }
+
+        waitlist.setStatus("cancelled");
+        waitlistRepository.save(waitlist);
     }
 }

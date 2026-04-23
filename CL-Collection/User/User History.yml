@@ -1,0 +1,15 @@
+info:
+  name: User History
+  type: http
+  seq: 9
+
+http:
+  method: GET
+  url: http://localhost:8080/api/v1/sessions/me
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

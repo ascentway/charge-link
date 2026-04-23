@@ -20,104 +20,104 @@ import argparse
 import logging
 import sys
 import time
+import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from opencharge_fetcher  import fetch_all_india_stations
 from supabase_uploader   import upload_stations, get_client
-from config              import GOOGLE_PLACES_API_KEY
+from config              import GOOGLE_PLACES_API_KEY, INDIA_CITIES, REQUEST_DELAY_SECONDS
 
 log = logging.getLogger(__name__)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-7s  %(message)s",
-    datefmt="%H:%M:%S",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+def haversine(lat1, lon1, lat2, lon2):
+    """Calculate distance in meters between two points."""
+    R = 6371000 # Earth radius in meters
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2)**2
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-
-def cmd_verify():
-    client = get_client()
-    s = client.table("stations").select("id", count="exact").execute()
-    c = client.table("chargers").select("id", count="exact").execute()
-    n = client.table("networks").select("id, name, has_live_api").execute()
-
-    print("")
-    print("━" * 55)
-    print("  ChargeLinK — Supabase DB status")
-    print("━" * 55)
-    print(f"  Stations : {s.count or 0}")
-    print(f"  Chargers : {c.count or 0}")
-    print(f"  Networks : {len(n.data or [])}")
-    if n.data:
-        print("")
-        for row in n.data:
-            print(f"    • {row['name']}")
-    print("━" * 55)
-
+def _are_close(s1, s2, threshold_meters=50):
+    return haversine(s1["lat"], s1["lng"], s2["lat"], s2["lng"]) <= threshold_meters
 
 def _collect_all(dry_run: bool = False,
                  use_ocm: bool = True,
                  use_google: bool = True,
                  use_osm: bool = True) -> list[dict]:
-    """Fetch from all enabled sources, deduplicate by lat/lng proximity."""
+    """Fetch from all enabled sources, deduplicate by ID and spatial proximity."""
     all_stations: list[dict] = []
     seen_ext_ids: set[str]   = set()
 
-    # ── 1. OpenChargeMap ──────────────────────────────────────────
+    # ── 1. OpenChargeMap (Sequential - safe for rate limits) ──────
     if use_ocm:
-        print("")
-        print("━" * 55)
-        print("  Source 1/3 — OpenChargeMap")
-        print("━" * 55)
+        print("\n" + "━" * 55 + "\n  Source 1/3 — OpenChargeMap\n" + "━" * 55)
         ocm = fetch_all_india_stations(dry_run=dry_run)
         for s in ocm:
-            if s["external_id"] not in seen_ext_ids:
-                seen_ext_ids.add(s["external_id"])
-                all_stations.append(s)
+            seen_ext_ids.add(s["external_id"])
+            all_stations.append(s)
         print(f"  OCM contributed: {len(ocm)} stations")
 
-    # ── 2. Google Places ──────────────────────────────────────────
+    # ── 2. Google Places (DEACTIVATED BY USER REQUEST 2026-04-07) ──
+    # To re-activate:
+    # 1. Enable "Places API (New)" in Google Cloud Console
+    # 2. Fix 403 API_KEY_SERVICE_BLOCKED restriction
+    # 3. Remove the 'use_google = False' line below
+    use_google = False
     if use_google:
         if not GOOGLE_PLACES_API_KEY:
-            print("")
-            print("  Source 2/3 — Google Places SKIPPED")
-            print("  Add GOOGLE_PLACES_API_KEY to .env to enable")
-            print("  (console.cloud.google.com → Places API New → free key)")
+            print("\n  Source 2/3 — Google Places SKIPPED (No API Key)")
         else:
-            print("")
-            print("━" * 55)
-            print("  Source 2/3 — Google Places API (New)")
-            print("━" * 55)
-            from google_places_fetcher import fetch_google_places_stations
-            goog = fetch_google_places_stations(dry_run=dry_run)
-            new_from_google = 0
-            for s in goog:
-                if s["external_id"] not in seen_ext_ids:
-                    seen_ext_ids.add(s["external_id"])
-                    all_stations.append(s)
-                    new_from_google += 1
-            print(f"  Google contributed: {new_from_google} new stations")
+            print("\n" + "━" * 55 + "\n  Source 2/3 — Google Places (Concurrent)\n" + "━" * 55)
+            from google_places_fetcher import _fetch_city, _parse_place
 
-    # ── 3. OpenStreetMap ─────────────────────────────────────────
+            cities = INDIA_CITIES[:3] if dry_run else INDIA_CITIES
+            goog_raw = []
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                future_to_city = {executor.submit(_fetch_city, c["lat"], c["lng"]): c for c in cities}
+                for future in as_completed(future_to_city):
+                    city = future_to_city[future]
+                    try:
+                        places = future.result()
+                        goog_raw.extend(places)
+                        log.info(f"  ✓ {city['name']:<15} : {len(places)} places")
+                    except Exception as e:
+                        log.error(f"  ✗ {city['name']:<15} : Failed: {e}")
+
+            new_from_google = 0
+            for p in goog_raw:
+                station = _parse_place(p)
+                if not station: continue
+
+                ext_id = station["external_id"]
+                if ext_id in seen_ext_ids: continue
+
+                # Spatial check: is it already added by OCM?
+                is_duplicate = any(_are_close(station, existing) for existing in all_stations)
+                if not is_duplicate:
+                    seen_ext_ids.add(ext_id)
+                    all_stations.append(station)
+                    new_from_google += 1
+
+            print(f"  Google contributed: {new_from_google} unique new stations")
+
+    # ── 3. OpenStreetMap (Supplemental) ──────────────────────────
     if use_osm and not dry_run:
-        print("")
-        print("━" * 55)
-        print("  Source 3/3 — OpenStreetMap (Overpass API)")
-        print("━" * 55)
+        print("\n" + "━" * 55 + "\n  Source 3/3 — OpenStreetMap\n" + "━" * 55)
         from osm_fetcher import fetch_osm_stations
         osm = fetch_osm_stations()
         new_from_osm = 0
         for s in osm:
-            if s["external_id"] not in seen_ext_ids:
-                seen_ext_ids.add(s["external_id"])
-                all_stations.append(s)
-                new_from_osm += 1
-        print(f"  OSM contributed: {new_from_osm} new stations")
-    elif use_osm and dry_run:
-        print("\n  Source 3/3 — OpenStreetMap skipped in dry-run mode")
+            if s["external_id"] in seen_ext_ids: continue
+            if any(_are_close(s, existing) for existing in all_stations): continue
+
+            seen_ext_ids.add(s["external_id"])
+            all_stations.append(s)
+            new_from_osm += 1
+        print(f"  OSM contributed: {new_from_osm} unique new stations")
 
     return all_stations
-
 
 def cmd_run(dry_run=False, use_ocm=True, use_google=True, use_osm=True):
     start = time.time()
@@ -171,6 +171,44 @@ def cmd_run(dry_run=False, use_ocm=True, use_google=True, use_osm=True):
     print("  python main.py --verify       check row counts")
     print("  cd backend && ./mvnw spring-boot:run   start API")
     print("━" * 55)
+
+
+def cmd_verify():
+    """Check how many stations and chargers are currently in Supabase."""
+    client = get_client()
+
+    print("\n" + "━" * 55)
+    print("  Supabase Database Verification")
+    print("━" * 55)
+
+    try:
+        # Count stations
+        st_res = client.table("stations").select("id", count="exact").execute()
+        st_count = st_res.count
+
+        # Count chargers
+        ch_res = client.table("chargers").select("id", count="exact").execute()
+        ch_count = ch_res.count
+
+        # Count networks
+        nw_res = client.table("networks").select("id", count="exact").execute()
+        nw_count = nw_res.count
+
+        print(f"  Networks : {nw_count}")
+        print(f"  Stations : {st_count}")
+        print(f"  Chargers : {ch_count}")
+
+        if st_count > 0:
+            # Sample check
+            latest = client.table("stations").select("name, city, data_source").order("created_at", desc=True).limit(5).execute()
+            print("\n  Latest 5 stations:")
+            for s in latest.data:
+                print(f"    • {s['name'][:30]:<32} | {s['city']:<15} | {s['data_source']}")
+
+    except Exception as e:
+        print(f"  Error connecting to Supabase: {e}")
+
+    print("━" * 55 + "\n")
 
 
 def main():
